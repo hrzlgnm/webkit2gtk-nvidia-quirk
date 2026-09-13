@@ -10,11 +10,14 @@
         ":combinePatchMinorReleases",
         ":docker",
         ":enableVulnerabilityAlerts",
-        ":maintainLockFilesWeekly",
         ":prConcurrentLimitNone",
         ":prImmediately",
         ":rebaseStalePrs",
         ":semanticCommits",
         ":separateMajorReleases",
     ],
+    // Library crate with no committed lockfile - nothing to maintain.
+    lockFileMaintenance: {
+        enabled: false,
+    },
 }
