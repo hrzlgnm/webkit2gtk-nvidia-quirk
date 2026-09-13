@@ -32,6 +32,7 @@
 //! |-------------|------------|---------------------|
 //! | X11 | Disable DMABUF renderer | `WEBKIT_DISABLE_DMABUF_RENDERER=1` |
 //! | Wayland (Hyprland) | Disable DMABUF renderer | `WEBKIT_DISABLE_DMABUF_RENDERER=1` |
+//! | Wayland (strict-sync, e.g. KDE Plasma/KWin) | Disable NVIDIA explicit sync | `__NV_DISABLE_EXPLICIT_SYNC=1` |
 //! | Wayland (other, `egl-wayland2`) | none | - |
 //! | Wayland (other) | Disable NVIDIA explicit sync | `__NV_DISABLE_EXPLICIT_SYNC=1` |
 //!
@@ -617,6 +618,28 @@ fn is_hyprland(compositor: Option<&str>) -> bool {
         .unwrap_or(false)
 }
 
+/// Compositors that strictly enforce the explicit-sync acquire-point rule, so
+/// WebKitGTK's DMA-BUF renderer (which does not always set an acquire point
+/// before committing) triggers a protocol error that kills the client.
+///
+/// Unlike Hyprland, these compositors do not exhibit the separate NVIDIA
+/// EGL/GBM SIGSEGV during rendering, so disabling explicit sync is sufficient
+/// to avoid the failure without turning off the DMA-BUF renderer. This is a
+/// heuristic list (Wayland provides no protocol to query strictness) and is
+/// matched against `XDG_CURRENT_DESKTOP`/`XDG_SESSION_DESKTOP`. KDE Plasma's
+/// KWin compositor advertises as either "KDE" or "Plasma".
+const EXPLICIT_SYNC_STRICT_COMPOSITORS: &[&str] = &["Plasma", "KDE"];
+
+/// Returns whether the running compositor strictly enforces the explicit-sync
+/// acquire-point rule (and therefore needs `__NV_DISABLE_EXPLICIT_SYNC` even
+/// when `egl-wayland2` is in use).
+fn is_explicit_sync_strict(compositor: Option<&str>) -> bool {
+    compositor.is_some_and(|c| {
+        c.split([':', ';', ','])
+            .any(|part| EXPLICIT_SYNC_STRICT_COMPOSITORS.contains(&part.trim()))
+    })
+}
+
 /// Represents the type of workaround to apply for NVIDIA WebKitGTK issues.
 ///
 /// Use this enum to determine which workaround is needed based on the session type
@@ -633,7 +656,9 @@ pub enum WorkaroundKind {
     /// Disable NVIDIA explicit sync.
     ///
     /// This workaround is needed for non-Hyprland Wayland sessions with NVIDIA
-    /// drivers where the dma-buf based `egl-wayland2` library is not in use.
+    /// drivers where the dma-buf based `egl-wayland2` library is not in use, or
+    /// when the compositor strictly enforces the acquire-point rule (e.g. KDE
+    /// Plasma/KWin) regardless of which EGL library is loaded.
     DisableNvExplicitSync,
 }
 
@@ -642,15 +667,20 @@ pub enum WorkaroundKind {
 ///
 /// On Hyprland the DMA-BUF renderer is disabled entirely, since it both
 /// violates the compositor's acquire-point rule (a protocol error that kills
-/// the client) and triggers an NVIDIA EGL/GBM SIGSEGV during rendering. On other
-/// Wayland compositors the explicit sync workaround is skipped when the dma-buf
-/// based `egl-wayland2` library is in use (NVIDIA driver 560+), since disabling
-/// explicit sync would degrade rendering performance; otherwise explicit sync is
-/// disabled.
+/// the client) and triggers an NVIDIA EGL/GBM SIGSEGV during rendering. On
+/// other Wayland compositors that strictly enforce the acquire-point rule
+/// (e.g. KDE Plasma/KWin), explicit sync is disabled even when `egl-wayland2`
+/// is in use, because the renderer still omits acquire points and those
+/// compositors kill the connection regardless of which EGL library is loaded.
+/// On remaining tolerant compositors the explicit sync workaround is skipped
+/// when the dma-buf based `egl-wayland2` library is in use (NVIDIA driver 560+),
+/// since disabling explicit sync would degrade rendering performance; otherwise
+/// explicit sync is disabled.
 fn workaround_for(
     session: SessionType,
     nvidia_detected: bool,
     hyprland: bool,
+    explicit_sync_strict: bool,
     egl_wayland2: bool,
 ) -> WorkaroundKind {
     if !nvidia_detected {
@@ -658,6 +688,7 @@ fn workaround_for(
     }
     match session {
         SessionType::Wayland if hyprland => WorkaroundKind::DisableWebkitDmabufRenderer,
+        SessionType::Wayland if explicit_sync_strict => WorkaroundKind::DisableNvExplicitSync,
         SessionType::Wayland if egl_wayland2 => WorkaroundKind::None,
         SessionType::Wayland => WorkaroundKind::DisableNvExplicitSync,
         SessionType::X11 => WorkaroundKind::DisableWebkitDmabufRenderer,
@@ -674,6 +705,7 @@ struct Detection {
     nvidia_driver_loaded: bool,
     compositor: Option<String>,
     hyprland: bool,
+    explicit_sync_strict: bool,
     egl_wayland2: bool,
     kind: WorkaroundKind,
 }
@@ -687,14 +719,22 @@ fn detect() -> Detection {
     let session = get_session_type();
     let compositor = get_compositor();
     let hyprland = is_hyprland(compositor.as_deref());
+    let explicit_sync_strict = !hyprland && is_explicit_sync_strict(compositor.as_deref());
     let egl_wayland2 = egl_wayland2_active();
-    let kind = workaround_for(session, nvidia_detected, hyprland, egl_wayland2);
+    let kind = workaround_for(
+        session,
+        nvidia_detected,
+        hyprland,
+        explicit_sync_strict,
+        egl_wayland2,
+    );
     Detection {
         session,
         primary_gpu_nvidia,
         nvidia_driver_loaded: driver_loaded,
         compositor,
         hyprland,
+        explicit_sync_strict,
         egl_wayland2,
         kind,
     }
@@ -731,6 +771,10 @@ fn print_debug_trace(detection: &Detection) {
         detection.compositor.as_deref().unwrap_or("(unknown)")
     );
     eprintln!("  hyprland: {}", detection.hyprland);
+    eprintln!(
+        "  explicit-sync strict (egl-wayland2 override): {}",
+        detection.explicit_sync_strict
+    );
     eprintln!("  egl-wayland2 active: {}", detection.egl_wayland2);
     eprintln!("  chosen workaround: {}", workaround_name(detection.kind));
     eprintln!(
@@ -1329,7 +1373,7 @@ mod tests {
             // render path SIGSEVs, so the DMABUF renderer is disabled even with
             // egl-wayland2 active (the workaround must not be skipped).
             assert_eq!(
-                workaround_for(SessionType::Wayland, true, true, true),
+                workaround_for(SessionType::Wayland, true, true, false, true),
                 WorkaroundKind::DisableWebkitDmabufRenderer
             );
         }
@@ -1339,7 +1383,7 @@ mod tests {
             // On compositors that tolerate the missing acquire point (e.g. niri),
             // egl-wayland2 works and the workaround is skipped.
             assert_eq!(
-                workaround_for(SessionType::Wayland, true, false, true),
+                workaround_for(SessionType::Wayland, true, false, false, true),
                 WorkaroundKind::None
             );
         }
@@ -1347,7 +1391,7 @@ mod tests {
         #[test]
         fn test_wayland_without_egl_wayland2_disables_nv_explicit_sync() {
             assert_eq!(
-                workaround_for(SessionType::Wayland, true, false, false),
+                workaround_for(SessionType::Wayland, true, false, false, false),
                 WorkaroundKind::DisableNvExplicitSync
             );
         }
@@ -1355,7 +1399,7 @@ mod tests {
         #[test]
         fn test_x11_disables_dmabuf_renderer() {
             assert_eq!(
-                workaround_for(SessionType::X11, true, false, false),
+                workaround_for(SessionType::X11, true, false, false, false),
                 WorkaroundKind::DisableWebkitDmabufRenderer
             );
         }
@@ -1363,7 +1407,7 @@ mod tests {
         #[test]
         fn test_unknown_session_is_noop() {
             assert_eq!(
-                workaround_for(SessionType::Unknown, true, false, false),
+                workaround_for(SessionType::Unknown, true, false, false, false),
                 WorkaroundKind::None
             );
         }
@@ -1371,13 +1415,48 @@ mod tests {
         #[test]
         fn test_no_nvidia_is_noop() {
             assert_eq!(
-                workaround_for(SessionType::Wayland, false, true, true),
+                workaround_for(SessionType::Wayland, false, true, false, true),
                 WorkaroundKind::None
             );
             assert_eq!(
-                workaround_for(SessionType::X11, false, false, false),
+                workaround_for(SessionType::X11, false, false, false, false),
                 WorkaroundKind::None
             );
+        }
+
+        #[test]
+        fn test_strict_sync_compositor_overrides_egl_wayland2() {
+            // KDE Plasma/KWin enforce the acquire-point rule even with
+            // egl-wayland2 active (observed: Error 71 on driver 615 + wayland2),
+            // so explicit sync must be disabled instead of skipping.
+            assert_eq!(
+                workaround_for(SessionType::Wayland, true, false, true, true),
+                WorkaroundKind::DisableNvExplicitSync
+            );
+        }
+
+        #[test]
+        fn test_strict_sync_compositor_without_egl_wayland2() {
+            assert_eq!(
+                workaround_for(SessionType::Wayland, true, false, true, false),
+                WorkaroundKind::DisableNvExplicitSync
+            );
+        }
+
+        #[test]
+        fn test_is_explicit_sync_strict_plasma_and_kde() {
+            assert!(is_explicit_sync_strict(Some("Plasma")));
+            assert!(is_explicit_sync_strict(Some("KDE")));
+            // Colon-separated desktop lists as advertised by some sessions.
+            assert!(is_explicit_sync_strict(Some("KDE:plasmashell")));
+        }
+
+        #[test]
+        fn test_is_explicit_sync_strict_others() {
+            assert!(!is_explicit_sync_strict(None));
+            assert!(!is_explicit_sync_strict(Some("Hyprland")));
+            assert!(!is_explicit_sync_strict(Some("niri")));
+            assert!(!is_explicit_sync_strict(Some("")));
         }
 
         #[test]
@@ -1482,6 +1561,7 @@ mod tests {
             workaround_for(
                 session,
                 primary_gpu_is_nvidia && driver_loaded,
+                false,
                 false,
                 false
             ),
