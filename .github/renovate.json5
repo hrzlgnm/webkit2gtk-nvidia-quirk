@@ -21,6 +21,14 @@
     lockFileMaintenance: {
         enabled: false,
     },
+    packageRules: [
+        {
+            description: "Use fix prefix for direct cargo dependency updates, including lockfile-only ones",
+            matchManagers: ["cargo"],
+            matchDepTypes: ["dependencies", "workspace.dependencies"],
+            semanticCommitType: "fix",
+        },
+    ],
     customManagers: [
         {
             description: "Track the sccache binary pinned via a renovate marker comment (the action pin does not cover it)",
