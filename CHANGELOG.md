@@ -5,6 +5,13 @@ All notable changes to `webkit2gtk-nvidia-quirk` will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This changelog is auto-generated from commits that modify this crate.
 
+## [2.1.2](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/compare/webkit2gtk-nvidia-quirk-v2.1.1...webkit2gtk-nvidia-quirk-v2.1.2) (2026-09-13)
+
+
+### Bug Fixes
+
+* disable explicit sync on strict compositors (KDE Plasma/KWin) even with egl-wayland2 ([#12](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/issues/12)) ([d583120](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/commit/d5831203e5003829148b9854acd375edade2e5a1))
+
 ## [2.1.1](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/compare/webkit2gtk-nvidia-quirk-v2.1.0...webkit2gtk-nvidia-quirk-v2.1.1) (2026-09-13)
 
 
