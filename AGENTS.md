@@ -157,7 +157,6 @@ After all checks pass and changes are committed:
 3. **Include in PR description**:
    - Summary of changes made
    - Any relevant issue numbers (e.g., "Closes #123")
-   - Testing performed
 4. **Request review** if applicable
 
 ## Code Review
@@ -181,8 +180,9 @@ findings are fixed.
   findings per axis and the worst issue within each axis. Fix defects
   before pushing.
 - After adding changes to an open pull request, update its description
-  so the summary, issue references, and testing cover the cumulative
-  branch.
+  so the summary and issue references cover the cumulative branch.
+- Keep pull request descriptions to summary and issue references; omit
+  testing recaps, CI and Validation already cover those.
 
 ## Code comments
 
