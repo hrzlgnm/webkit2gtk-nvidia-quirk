@@ -1,0 +1,215 @@
+# AGENTS.md
+
+Guidelines and commands for agentic coding agents working on the webkit2gtk-nvidia-quirk repository.
+
+## Project Overview
+
+This is a single-crate Rust library (`webkit2gtk-nvidia-quirk`) that provides
+session-aware workarounds for WebKitGTK rendering issues on Linux systems with
+the proprietary NVIDIA driver. It detects the driver and the session type
+(X11/Wayland) and sets the appropriate environment variables
+(`WEBKIT_DISABLE_DMABUF_RENDERER`, `__NV_DISABLE_EXPLICIT_SYNC`).
+
+Releases are published to crates.io via trusted publishing (OIDC). CI runs on
+Ubuntu only.
+
+## Essential Commands
+
+This is a single-crate package - run commands from the root.
+
+### Test
+
+```bash
+cargo test                                    # run all tests
+cargo test test_name                          # run a single test
+```
+
+### Format and Lint (individual)
+
+```bash
+cargo fmt -- --check                          # check formatting
+cargo clippy --all-targets -- -D warnings     # lint
+
+# Validate renovate configuration (when .github/renovate.json5 changed)
+npx --yes -p renovate@latest renovate-config-validator .github/renovate.json5
+```
+
+### Full check (run before every commit)
+
+```bash
+cargo fmt -- --check && \
+cargo clippy --all-targets -- -D warnings && \
+cargo test && \
+actionlint .github/workflows/*.yml
+```
+
+### Task-specific guides
+
+- GitHub Actions: before modifying `.github/workflows/*.yml`, read [docs/agents/github-actions.md](docs/agents/github-actions.md) first.
+
+## Development Workflow
+
+1. Create a branch for your changes (see [Git Conventions](#git-conventions))
+2. Make your changes
+3. Run the [full check](#full-check-run-before-every-commit)
+4. Conditional checks: renovate config validator if `.github/renovate.json5`
+   changed
+5. Commit only when all checks pass, then push and open a PR (see
+   [After Completion](#after-completion))
+
+## Code Style Guidelines
+
+### File Headers
+
+All source files must include:
+
+```rust
+// Copyright 2026 hrzlgnm
+// SPDX-License-Identifier: MIT
+```
+
+### Rust Code Style
+
+- `cargo fmt` applies and checks formatting; no need to review formatting or import style, the formatter covers it
+- Prefer explicit error handling over `unwrap()`
+- Keep imports at file level, not inside functions
+
+### Error Handling
+
+- Use `map_err()` for error conversion with context
+- Log errors with `log::error!()` before propagating
+
+### Testing Guidelines
+
+- Write unit tests in `#[cfg(test)]` modules
+- Use descriptive test names following `test_functionality_scenario` pattern
+
+### Platform-Specific Code
+
+- This crate is Linux-only in practice; guard OS-specific code with
+  `#[cfg(target_os = "...")]` and keep it in submodules where possible
+
+### Documentation
+
+- Document public APIs with rustdoc comments
+
+## Project Structure
+
+```text
+├── src/
+│   └── lib.rs                      # Crate implementation and tests
+├── docs/agents/                    # Task-specific agent guides
+├── .github/workflows/              # CI, crate publish, release-please
+├── Cargo.toml                      # Package configuration
+└── CHANGELOG.md                    # Owned by release-please, do not hand-edit
+```
+
+## Git Conventions
+
+- Conventional commits: `feat:`, `fix:`, `chore:`, `refactor:`, `docs:`, etc.
+- All changes land via pull requests on a branch (direct pushes to `main` are blocked). Create a `feat/...`, `fix/...`, etc. branch and open a PR.
+
+### Tags
+
+- Releases are tagged with `webkit2gtk-nvidia-quirk-vMAJOR.MINOR.PATCH`
+  (e.g. `webkit2gtk-nvidia-quirk-v2.1.1`), owned by release-please.
+- When adding a "added with release" note to docs, link to the matching
+  `webkit2gtk-nvidia-quirk-vX.Y.Z` tag.
+
+### When to commit
+
+- Do not leave completed work uncommitted. Once a logical unit of work is done and the tree is green, commit it — don't wait to be asked. This is a standing authorization: treat every task as implicitly including "and commit your work" unless the user says otherwise.
+- Commit as you go, not all at once at the end. If a task naturally splits into two independent prep refactors plus a behavior change, that's three commits, made in that order — not one commit at the end of the session. (Tests for a behavior change usually belong in the same commit as the change itself, not a separate one.)
+
+### How to structure commits
+
+- Prefer a fine-grained commit history. Commits should be as small as possible while still being meaningful and self-contained.
+- Every commit must compile and pass all tests. No "WIP" commits, no commits that leave the tree broken and rely on a follow-up to fix it.
+- Every commit must pass the [full check](#full-check-run-before-every-commit) — don't introduce a warning in one commit that a later commit (or the user) cleans up.
+- Commit messages explain why, not what. The diff already shows what changed; the message should capture the motivation, the constraint, or the bug being fixed. If the reason is obvious from a one-line subject, no body is needed — but never paraphrase the diff.
+- Separate preparatory refactorings from behavior changes. If a fix or feature is easier to review after a refactor, land the refactor in its own commit first. Pure refactors must be behavior-preserving.
+- Wrap the message body to 72 characters. The subject may go up to 80 characters, or a little more if needed to convey a good single-line summary; the body wraps at 72 exactly.
+
+### Attributing AI usage
+
+- Every commit gets both trailers in a trailer block at the end, after a blank line. Use `--trailer` on the command line so no wrapping or manual formatting is needed:
+  - `Co-authored-by: opencode <noreply@opencode.ai>`
+  - `Assisted-by: opencode (<model-name>)`
+- Trailers are exempt from the 72-character body wrap.
+- Never use `--author` or `--committer` for this attribution. The release-notes tooling derives the credited `@username` from the commit author, so doing so would replace the user with the bot throughout the release notes.
+- `amend!` commits must repeat both trailers in the replacement message body. The replacement overwrites the target's message wholesale, so omitting them strips attribution from the target when the user folds the amend in with `--autosquash`. Plain `fixup!` commits need no special care: their message is discarded on autosquash and the target keeps its own trailers.
+
+### Iterate with fixup! commits
+
+- When refining work that's already committed — adjusting an approach, incorporating an idea from elsewhere, fixing something that belongs to the same logical unit — create a fixup against the target commit (`git commit --fixup=<sha>`) so it sits alongside its target, ready for the user to fold in later with `git rebase --autosquash`. Don't pile follow-up commits on top with the intent of squashing them later.
+- This holds even when the target is HEAD: use `git commit --fixup`, not `git commit --amend`. An `--amend` rewrites the commit on the spot and skips the reviewable checkpoint a fixup provides.
+- If the changes don't map cleanly onto existing commits — they cut across several of them, or restructure something at a different layer than any existing commit naturally owns — stop and ask the user how to proceed.
+- After writing a fixup, re-read the target commit's message. If anything in that message has become inaccurate because of the fixup, use an `amend!` commit instead (`git commit --fixup=amend:<sha>`).
+- Never squash the fixups yourself. Leave them in the history as separate commits; collapsing them into their targets is the user's action, taken once they've reviewed the iterations. If you think the history is ready to collapse, say so and leave it to them.
+
+## After Completion
+
+After all checks pass and changes are committed:
+
+0. **Review the change** on the two axes described in [Code Review](#code-review) before pushing.
+1. **Push changes** to the repository
+2. **Create a pull request** immediately after pushing - do not wait for a prompt. Open PRs proactively for any pushed commit that does not already have one.
+3. **Include in PR description**:
+   - Summary of changes made
+   - Any relevant issue numbers (e.g., "Closes #123")
+   - Testing performed
+4. **Request review** if applicable
+
+## Code Review
+
+This is a mandatory gate. Do not push, do not open a PR, and do not
+declare a task complete until the two-axis review has run and its
+findings are fixed.
+
+- **When:** after all checks pass on the final commit(s), before
+  `git push` and before `gh pr create`. Re-run after every fixup that
+  touches `src/` or docs.
+- **How:** load the `code-review` skill (skill tool `name: "code-review"`).
+  Pin the fixed point to `main` (use `origin/main` if `main` is stale)
+  and pass `git diff main...HEAD` (three-dot, merge-base) plus
+  `git log main..HEAD --oneline`. The skill spawns two parallel
+  sub-agents — **Standards** (this file plus the Fowler smell baseline
+  defined in the skill) and **Spec** (originating issue/spec/request;
+  reports "no spec available" if none exists) — then aggregates.
+- **Report:** paste both axes verbatim under `## Standards` / `## Spec`,
+  do not merge or rerank them. End with a one-line summary: total
+  findings per axis and the worst issue within each axis. Fix defects
+  before pushing.
+- After adding changes to an open pull request, update its description
+  so the summary, issue references, and testing cover the cumulative
+  branch.
+
+## Code comments
+
+Comments in source code explain *why* this code is shaped the way it is. They are not the place to narrate the path taken during development — what was tried first, what didn't work, what's "more reliable" or "cleaner" than some alternative. That framing is noise to later readers: the rejected alternative is nowhere in the file, so the comparison is meaningless.
+
+- Avoid phrasings like "we used to … but …", "after trying X, we found Y", or "X rather than Y" where Y is what the code did before the change.
+- The iteration story sometimes belongs in the commit message — the durable record of *why* a change was made — not in the code comment.
+- The check to apply: would you have written this comment if you were writing the file from scratch, with no diff in mind? If not, the sentence belongs in the commit message.
+- If the codebase calls a helper in many places without explanation, your new call site doesn't need one either. A comment there says "something here is unusual"; when nothing is, it's noise.
+
+## Engineering judgment
+
+### Surface decisions
+When a decision surfaces while implementing — a design choice, a tradeoff, a scope cut, an "this turned out harder than expected, so maybe X" — don't quietly make the call and keep going, even if you have a clear recommendation. Stop, lay out the options and your recommendation, and let the user weigh in. Obvious mechanical choices with one sensible answer don't need a checkpoint, but genuine forks — where a reasonable person might pick differently, or where you'd trade away something the plan assumed — do. This applies to unforeseen discoveries (a latent bug, a race, a wrong assumption) too: stop and raise them before designing or writing a fix.
+
+### Don't present "live with the bug" as an option
+When investigating a defect and laying out fix options, "accept the race / leave it as-is / document it and move on" is not one of them. A known race, data corruption, or correctness violation is a bug that needs a real fix. If a real fix is genuinely out of reach, say so plainly; don't dress "no fix" up as a viable option alongside real ones.
+
+### Prefer the cleaner design over the smaller diff
+When a task could be done by tacking onto existing code or by first restructuring it slightly, choose the restructuring. "Minimal change" is not a goal in itself; a readable final state is. The prep-refactor-then-behavior-change pattern exists for exactly this. This is not license for speculative abstraction, but if the current change would be clearer after extracting a method, splitting a function, or adjusting names, that refactor is part of the task.
+
+## Hard Rules
+
+- No `unsafe` code anywhere
+- No `#[allow(warnings)]` attributes - fix the underlying issue instead
+- New GitHub Actions must run on Node.js 24 or newer: when adding or
+  updating an action pin, verify upstream that its runtime (`runs.using`)
+  is `node24` or later. Node.js 20 and older are deprecated and emit a
+  warning on every run.
+- Release versions and `CHANGELOG.md` entries are owned by release-please: never bump versions or hand-edit changelogs. The crate publish workflow only publishes already-tagged releases to crates.io. Only change source, tests, and docs.
