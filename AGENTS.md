@@ -157,7 +157,6 @@ After all checks pass and changes are committed:
 3. **Include in PR description**:
    - Summary of changes made
    - Any relevant issue numbers (e.g., "Closes #123")
-   - Testing performed
 4. **Request review** if applicable
 
 ## Code Review
