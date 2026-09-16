@@ -15,6 +15,9 @@ Ubuntu only. Publishing is automatic: release-please owns the draft release
 and tag, the `release.yml` workflow publishes the crate and only then flips
 the draft live, and `release-guard.yml` demotes hand-published drafts to
 pre-release. Never publish the draft by hand.
+Runners: short jobs (tag checks, release-please, draft promotion,
+release guard) use `ubuntu-slim`; toolchain and build jobs stay on
+`ubuntu-latest`.
 
 ## Essential Commands
 
