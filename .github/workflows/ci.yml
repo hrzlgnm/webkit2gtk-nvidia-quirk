@@ -57,7 +57,7 @@ jobs:
         uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         with:
           # renovate: datasource=github-releases depName=mozilla/sccache versioning=semver
-          version: "v0.17.0"
+          version: "v0.18.0"
 
       - name: 🔗 Enable sccache for cargo
         shell: bash
@@ -79,7 +79,8 @@ jobs:
     needs:
       - check-release
     if: always() && needs.check-release.outputs.is_release != 'true'
-    uses: hrzlgnm/actions/.github/workflows/typos-reusable.yml@275b5f2d90d762bd71567db08b250d8ba7cdb274 # v2.14.4
+    uses: hrzlgnm/actions/.github/workflows/typos-reusable.yml@03b79955b43e4b4ae1678541e9d315d4f24c847d # v2.14.8
+
 
   all-required-green: # This job does nothing and is only used for the branch protection
     name: CI Status
