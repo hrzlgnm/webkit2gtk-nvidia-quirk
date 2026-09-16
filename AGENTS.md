@@ -11,7 +11,10 @@ the proprietary NVIDIA driver. It detects the driver and the session type
 (`WEBKIT_DISABLE_DMABUF_RENDERER`, `__NV_DISABLE_EXPLICIT_SYNC`).
 
 Releases are published to crates.io via trusted publishing (OIDC). CI runs on
-Ubuntu only.
+Ubuntu only. Publishing is automatic: release-please owns the draft release
+and tag, the `release.yml` workflow publishes the crate and only then flips
+the draft live, and `release-guard.yml` demotes hand-published drafts to
+pre-release. Never publish the draft by hand.
 
 ## Essential Commands
 
@@ -99,7 +102,7 @@ All source files must include:
 ├── src/
 │   └── lib.rs                      # Crate implementation and tests
 ├── docs/agents/                    # Task-specific agent guides
-├── .github/workflows/              # CI, crate publish, release-please
+├── .github/workflows/              # CI, release (incl. crates.io publish), release guard
 ├── Cargo.toml                      # Package configuration
 └── CHANGELOG.md                    # Owned by release-please, do not hand-edit
 ```
@@ -113,6 +116,9 @@ All source files must include:
 
 - Releases are tagged with `webkit2gtk-nvidia-quirk-vMAJOR.MINOR.PATCH`
   (e.g. `webkit2gtk-nvidia-quirk-v2.1.1`), owned by release-please.
+  Release-please creates them as drafts; the `publish` job in
+  `release.yml` flips the draft live only after the crate publish
+  succeeds, so leave drafts alone until then.
 - When adding a "added with release" note to docs, link to the matching
   `webkit2gtk-nvidia-quirk-vX.Y.Z` tag.
 
@@ -212,4 +218,4 @@ When a task could be done by tacking onto existing code or by first restructurin
   updating an action pin, verify upstream that its runtime (`runs.using`)
   is `node24` or later. Node.js 20 and older are deprecated and emit a
   warning on every run.
-- Release versions and `CHANGELOG.md` entries are owned by release-please: never bump versions or hand-edit changelogs. The crate publish workflow only publishes already-tagged releases to crates.io. Only change source, tests, and docs.
+- Release versions and `CHANGELOG.md` entries are owned by release-please: never bump versions or hand-edit changelogs. The release workflow publishes the already-tagged release to crates.io and only then flips the draft live. Only change source, tests, and docs.
