@@ -1018,7 +1018,8 @@ impl ApplyWorkaroundOptions {
 pub fn apply_workaround_with_options(options: ApplyWorkaroundOptions) {
     let automatic = !options.force_disable_dmabuf && !options.force_disable_nv_explicit_sync;
     if workaround_already_configured() {
-        if automatic {
+        // Trace even for forced calls so a skip is never silent at debug level.
+        if debug_enabled() {
             print_debug_trace(&detect());
         }
         return;
