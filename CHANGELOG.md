@@ -5,6 +5,19 @@ All notable changes to `webkit2gtk-nvidia-quirk` will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This changelog is auto-generated from commits that modify this crate.
 
+## [2.2.0](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/compare/webkit2gtk-nvidia-quirk-v2.1.2...webkit2gtk-nvidia-quirk-v2.2.0) (2026-09-18)
+
+
+### Features
+
+* publish crate automatically on release, then flip draft live ([#19](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/issues/19)) ([f3134f5](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/commit/f3134f5b509b32152dd37dd4bb6aff93da13c44f))
+* skip workarounds when a workaround env var is already set ([#22](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/issues/22)) ([06cc8af](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/commit/06cc8af9feea18ded8d1c254bc747b9a4dfff759))
+
+
+### Bug Fixes
+
+* detect release-please commits in CI skip check ([#21](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/issues/21)) ([b2d7faa](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/commit/b2d7faa3b5129166e1551caa86425bdfb3d4eeb9))
+
 ## [2.1.2](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/compare/webkit2gtk-nvidia-quirk-v2.1.1...webkit2gtk-nvidia-quirk-v2.1.2) (2026-09-13)
 
 
