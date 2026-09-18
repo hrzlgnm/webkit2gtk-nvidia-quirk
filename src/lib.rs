@@ -41,6 +41,11 @@
 //! `x11`/`wayland` wins; unrecognized entries such as `broadway` are ignored),
 //! then `XDG_SESSION_TYPE`, then `WAYLAND_DISPLAY`/`DISPLAY`.
 //!
+//! When any of `WEBKIT_DISABLE_DMABUF_RENDERER`, `__NV_DISABLE_EXPLICIT_SYNC`,
+//! `WEBKIT_DISABLE_COMPOSITING_MODE`, or `WEBKIT_DMABUF_RENDERER_FORCE_SHM` is
+//! already set, workarounds are skipped entirely and the existing configuration
+//! is left untouched.
+//!
 //! ## Wayland
 //!
 //! WebKitGTK's DMA-BUF renderer enables the Wayland explicit sync protocol on
@@ -608,7 +613,9 @@ fn hyprland_socket_present() -> bool {
 /// (a protocol error that kills the client on Hyprland, tolerated by e.g.
 /// niri), and its NVIDIA EGL/GBM render path SIGSEVs during rendering
 /// (`libnvidia-eglcore` / GBM `EINVAL`). The DMA-BUF renderer is disabled there
-/// to avoid both failure modes.
+/// to avoid both failure modes. Forcing shared-memory buffers is not a
+/// substitute: the SIGSEGV was observed with
+/// `WEBKIT_DMABUF_RENDERER_FORCE_SHM` set.
 fn is_hyprland(compositor: Option<&str>) -> bool {
     compositor
         .map(|c| {
@@ -696,6 +703,33 @@ fn workaround_for(
     }
 }
 
+/// Environment variables that select a manual WebKit/NVIDIA rendering
+/// configuration.
+///
+/// When the user (or another tool) has already set any of these, automatic
+/// workarounds are skipped entirely so the existing configuration is left
+/// untouched:
+/// - `WEBKIT_DISABLE_DMABUF_RENDERER`: disables the DMA-BUF renderer.
+/// - `__NV_DISABLE_EXPLICIT_SYNC`: disables NVIDIA explicit sync.
+/// - `WEBKIT_DISABLE_COMPOSITING_MODE`: forces accelerated compositing off.
+/// - `WEBKIT_DMABUF_RENDERER_FORCE_SHM`: keeps the DMA-BUF renderer but forces
+///   it onto the shared-memory buffer path.
+const WORKAROUND_ENV_VARS: &[&str] = &[
+    "WEBKIT_DISABLE_DMABUF_RENDERER",
+    "__NV_DISABLE_EXPLICIT_SYNC",
+    "WEBKIT_DISABLE_COMPOSITING_MODE",
+    "WEBKIT_DMABUF_RENDERER_FORCE_SHM",
+];
+
+/// Returns whether a workaround environment variable is already present. See
+/// [`WORKAROUND_ENV_VARS`] for the set of variables that counts as an existing
+/// manual configuration.
+fn workaround_already_configured() -> bool {
+    WORKAROUND_ENV_VARS
+        .iter()
+        .any(|var| std::env::var_os(var).is_some())
+}
+
 /// The result of probe-based detection, kept together so the debug trace can
 /// report exactly why a given workaround was chosen.
 #[derive(Debug)]
@@ -711,6 +745,10 @@ struct Detection {
 }
 
 /// Runs the full detection pipeline and returns the structured [`Detection`].
+///
+/// When a workaround environment variable is already set (see
+/// [`workaround_already_configured`]), the chosen workaround is overridden to
+/// [`WorkaroundKind::None`] so existing configuration is left untouched.
 fn detect() -> Detection {
     let devices = enumerate_gpus();
     let primary_gpu_nvidia = devices.iter().any(|d| d.is_primary && d.is_nvidia);
@@ -721,13 +759,16 @@ fn detect() -> Detection {
     let hyprland = is_hyprland(compositor.as_deref());
     let explicit_sync_strict = !hyprland && is_explicit_sync_strict(compositor.as_deref());
     let egl_wayland2 = egl_wayland2_active();
-    let kind = workaround_for(
+    let mut kind = workaround_for(
         session,
         nvidia_detected,
         hyprland,
         explicit_sync_strict,
         egl_wayland2,
     );
+    if kind != WorkaroundKind::None && workaround_already_configured() {
+        kind = WorkaroundKind::None;
+    }
     Detection {
         session,
         primary_gpu_nvidia,
@@ -777,20 +818,19 @@ fn print_debug_trace(detection: &Detection) {
     );
     eprintln!("  egl-wayland2 active: {}", detection.egl_wayland2);
     eprintln!("  chosen workaround: {}", workaround_name(detection.kind));
-    eprintln!(
-        "  WEBKIT_DISABLE_DMABUF_RENDERER set: {}",
-        std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_ok()
-    );
-    eprintln!(
-        "  __NV_DISABLE_EXPLICIT_SYNC set: {}",
-        std::env::var("__NV_DISABLE_EXPLICIT_SYNC").is_ok()
-    );
+    for var in WORKAROUND_ENV_VARS {
+        eprintln!("  {var} set: {}", std::env::var_os(var).is_some());
+    }
 }
 
 /// Checks if a workaround should be applied.
 ///
 /// This function checks if the proprietary NVIDIA driver is loaded and the primary GPU is NVIDIA.
 /// If so, it detects the session type (X11 or Wayland) and returns which workaround should be applied.
+///
+/// Returns [`WorkaroundKind::None`] when a workaround environment variable (see
+/// [`WORKAROUND_ENV_VARS`]) is already set, so existing configuration is left
+/// untouched.
 ///
 /// # Returns
 ///
@@ -971,6 +1011,10 @@ impl ApplyWorkaroundOptions {
 /// If any force options are set in `options`, those workarounds are applied directly.
 /// Otherwise, it calls [`needs_workaround`] to detect which workaround is needed.
 ///
+/// When a workaround environment variable (see [`WORKAROUND_ENV_VARS`]) is
+/// already set, no workaround is applied and existing configuration is left
+/// untouched - including forced workarounds.
+///
 /// # Arguments
 ///
 /// * `options` - The workaround options to apply
@@ -980,13 +1024,21 @@ impl ApplyWorkaroundOptions {
 /// This function modifies the process environment. Call it early in your
 /// application's startup, before any threading has begun.
 pub fn apply_workaround_with_options(options: ApplyWorkaroundOptions) {
+    let automatic = !options.force_disable_dmabuf && !options.force_disable_nv_explicit_sync;
+    if workaround_already_configured() {
+        // Trace even for forced calls so a skip is never silent at debug level.
+        if debug_enabled() {
+            print_debug_trace(&detect());
+        }
+        return;
+    }
     if options.force_disable_dmabuf {
         set_webkit_disable_dmabuf_renderer(options.verbose);
     }
     if options.force_disable_nv_explicit_sync {
         nv_disable_explicit_sync(options.verbose);
     }
-    if !options.force_disable_dmabuf && !options.force_disable_nv_explicit_sync {
+    if automatic {
         let detection = detect();
         match detection.kind {
             WorkaroundKind::None => {}
@@ -1637,6 +1689,168 @@ mod tests {
             with_var(Some("1"), || assert!(!debug_enabled()));
             with_var(Some("debug"), || assert!(debug_enabled()));
             with_var(None, || assert!(!debug_enabled()));
+        }
+    }
+
+    mod workaround_env_skip {
+        use super::*;
+
+        // These tests share the workaround env vars, so serialize them to
+        // avoid one test's `set_var` racing another's `assert`.
+        use std::sync::Mutex;
+        static LOCK: Mutex<()> = Mutex::new(());
+
+        /// Restores saved workaround env vars on drop, so a panicking test
+        /// cannot leak modified values into other tests sharing the lock.
+        struct RestoreWorkaroundEnv {
+            prev: Vec<Option<std::ffi::OsString>>,
+        }
+
+        impl Drop for RestoreWorkaroundEnv {
+            fn drop(&mut self) {
+                for (var, value) in WORKAROUND_ENV_VARS.iter().zip(self.prev.drain(..)) {
+                    match value {
+                        Some(v) => std::env::set_var(var, v),
+                        None => std::env::remove_var(var),
+                    }
+                }
+            }
+        }
+
+        fn with_workaround_vars<F: FnOnce()>(
+            dmabuf: Option<&str>,
+            nv_sync: Option<&str>,
+            compositing: Option<&str>,
+            force_shm: Option<&str>,
+            f: F,
+        ) {
+            let _guard = LOCK.lock().unwrap();
+            let values = [dmabuf, nv_sync, compositing, force_shm];
+            debug_assert_eq!(values.len(), WORKAROUND_ENV_VARS.len());
+            // Save any pre-existing values so the test does not leak into the
+            // surrounding environment.
+            let prev: Vec<Option<std::ffi::OsString>> =
+                WORKAROUND_ENV_VARS.iter().map(std::env::var_os).collect();
+            let _restore = RestoreWorkaroundEnv { prev };
+            for (var, value) in WORKAROUND_ENV_VARS.iter().zip(values) {
+                match value {
+                    Some(v) => std::env::set_var(var, v),
+                    None => std::env::remove_var(var),
+                }
+            }
+            f();
+        }
+
+        #[test]
+        fn test_no_workaround_vars_set() {
+            with_workaround_vars(None, None, None, None, || {
+                assert!(!workaround_already_configured());
+            });
+        }
+
+        #[test]
+        fn test_dmabuf_var_set_skips() {
+            with_workaround_vars(Some("1"), None, None, None, || {
+                assert!(workaround_already_configured());
+            });
+        }
+
+        #[test]
+        fn test_nv_sync_var_set_skips() {
+            with_workaround_vars(None, Some("1"), None, None, || {
+                assert!(workaround_already_configured());
+            });
+        }
+
+        #[test]
+        fn test_compositing_var_set_skips() {
+            with_workaround_vars(None, None, Some("1"), None, || {
+                assert!(workaround_already_configured());
+            });
+        }
+
+        #[test]
+        fn test_both_vars_set_skips() {
+            with_workaround_vars(Some("1"), Some("1"), None, None, || {
+                assert!(workaround_already_configured());
+            });
+        }
+
+        #[test]
+        fn test_apply_skips_when_dmabuf_already_set() {
+            with_workaround_vars(Some("1"), None, None, None, || {
+                apply_workaround_with_options(
+                    ApplyWorkaroundOptions::default().force_disable_nv_explicit_sync(true),
+                );
+                assert!(std::env::var_os("__NV_DISABLE_EXPLICIT_SYNC").is_none());
+            });
+        }
+
+        #[test]
+        fn test_apply_skips_when_nv_sync_already_set() {
+            with_workaround_vars(None, Some("1"), None, None, || {
+                apply_workaround_with_options(
+                    ApplyWorkaroundOptions::default().force_disable_dmabuf(true),
+                );
+                assert!(std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none());
+            });
+        }
+
+        #[test]
+        fn test_apply_skips_when_compositing_already_set() {
+            with_workaround_vars(None, None, Some("1"), None, || {
+                apply_workaround_with_options(
+                    ApplyWorkaroundOptions::default().force_disable_dmabuf(true),
+                );
+                assert!(std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none());
+                apply_workaround_with_options(
+                    ApplyWorkaroundOptions::default().force_disable_nv_explicit_sync(true),
+                );
+                assert!(std::env::var_os("__NV_DISABLE_EXPLICIT_SYNC").is_none());
+            });
+        }
+
+        #[test]
+        fn test_apply_automatic_skips_when_either_var_set() {
+            with_workaround_vars(Some("0"), None, None, None, || {
+                apply_workaround_with_options(ApplyWorkaroundOptions::default());
+                assert!(std::env::var_os("__NV_DISABLE_EXPLICIT_SYNC").is_none());
+            });
+            with_workaround_vars(None, Some("0"), None, None, || {
+                apply_workaround_with_options(ApplyWorkaroundOptions::default());
+                assert!(std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none());
+            });
+            with_workaround_vars(None, None, Some("0"), None, || {
+                apply_workaround_with_options(ApplyWorkaroundOptions::default());
+                assert!(std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none());
+                assert!(std::env::var_os("__NV_DISABLE_EXPLICIT_SYNC").is_none());
+            });
+            with_workaround_vars(None, None, None, Some("0"), || {
+                apply_workaround_with_options(ApplyWorkaroundOptions::default());
+                assert!(std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none());
+                assert!(std::env::var_os("__NV_DISABLE_EXPLICIT_SYNC").is_none());
+            });
+        }
+
+        #[test]
+        fn test_force_shm_var_set_skips() {
+            with_workaround_vars(None, None, None, Some("1"), || {
+                assert!(workaround_already_configured());
+            });
+        }
+
+        #[test]
+        fn test_apply_skips_when_force_shm_already_set() {
+            with_workaround_vars(None, None, None, Some("1"), || {
+                apply_workaround_with_options(
+                    ApplyWorkaroundOptions::default().force_disable_dmabuf(true),
+                );
+                assert!(std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none());
+                apply_workaround_with_options(
+                    ApplyWorkaroundOptions::default().force_disable_nv_explicit_sync(true),
+                );
+                assert!(std::env::var_os("__NV_DISABLE_EXPLICIT_SYNC").is_none());
+            });
         }
     }
 }
