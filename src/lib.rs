@@ -613,7 +613,9 @@ fn hyprland_socket_present() -> bool {
 /// (a protocol error that kills the client on Hyprland, tolerated by e.g.
 /// niri), and its NVIDIA EGL/GBM render path SIGSEVs during rendering
 /// (`libnvidia-eglcore` / GBM `EINVAL`). The DMA-BUF renderer is disabled there
-/// to avoid both failure modes.
+/// to avoid both failure modes. Forcing shared-memory buffers is not a
+/// substitute: the SIGSEGV was observed with
+/// `WEBKIT_DMABUF_RENDERER_FORCE_SHM` set.
 fn is_hyprland(compositor: Option<&str>) -> bool {
     compositor
         .map(|c| {
