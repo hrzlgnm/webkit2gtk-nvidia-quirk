@@ -819,7 +819,7 @@ fn print_debug_trace(detection: &Detection) {
     eprintln!("  egl-wayland2 active: {}", detection.egl_wayland2);
     eprintln!("  chosen workaround: {}", workaround_name(detection.kind));
     for var in WORKAROUND_ENV_VARS {
-        eprintln!("  {var} set: {}", std::env::var(var).is_ok());
+        eprintln!("  {var} set: {}", std::env::var_os(var).is_some());
     }
 }
 
@@ -1700,6 +1700,23 @@ mod tests {
         use std::sync::Mutex;
         static LOCK: Mutex<()> = Mutex::new(());
 
+        /// Restores saved workaround env vars on drop, so a panicking test
+        /// cannot leak modified values into other tests sharing the lock.
+        struct RestoreWorkaroundEnv {
+            prev: Vec<Option<std::ffi::OsString>>,
+        }
+
+        impl Drop for RestoreWorkaroundEnv {
+            fn drop(&mut self) {
+                for (var, value) in WORKAROUND_ENV_VARS.iter().zip(self.prev.drain(..)) {
+                    match value {
+                        Some(v) => std::env::set_var(var, v),
+                        None => std::env::remove_var(var),
+                    }
+                }
+            }
+        }
+
         fn with_workaround_vars<F: FnOnce()>(
             dmabuf: Option<&str>,
             nv_sync: Option<&str>,
@@ -1714,6 +1731,7 @@ mod tests {
             // surrounding environment.
             let prev: Vec<Option<std::ffi::OsString>> =
                 WORKAROUND_ENV_VARS.iter().map(std::env::var_os).collect();
+            let _restore = RestoreWorkaroundEnv { prev };
             for (var, value) in WORKAROUND_ENV_VARS.iter().zip(values) {
                 match value {
                     Some(v) => std::env::set_var(var, v),
@@ -1721,12 +1739,6 @@ mod tests {
                 }
             }
             f();
-            for (var, value) in WORKAROUND_ENV_VARS.iter().zip(prev) {
-                match value {
-                    Some(v) => std::env::set_var(var, v),
-                    None => std::env::remove_var(var),
-                }
-            }
         }
 
         #[test]
