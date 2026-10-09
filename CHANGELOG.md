@@ -5,6 +5,14 @@ All notable changes to `webkit2gtk-nvidia-quirk` will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This changelog is auto-generated from commits that modify this crate.
 
+## [2.3.0](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/compare/webkit2gtk-nvidia-quirk-v2.2.0...webkit2gtk-nvidia-quirk-v2.3.0) (2026-10-09)
+
+
+### Features
+
+* skip workarounds when a workaround env var is already set ([01b78b3](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/commit/01b78b347c51e8ae895fd69c76e29e86879f0203))
+* skip workarounds when a workaround env var is already set ([01b78b3](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/commit/01b78b347c51e8ae895fd69c76e29e86879f0203))
+
 ## [2.2.0](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/compare/webkit2gtk-nvidia-quirk-v2.1.2...webkit2gtk-nvidia-quirk-v2.2.0) (2026-09-18)
 
 
