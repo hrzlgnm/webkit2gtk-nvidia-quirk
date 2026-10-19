@@ -13,11 +13,11 @@ the proprietary NVIDIA driver. It detects the driver and the session type
 Releases are published to crates.io via trusted publishing (OIDC). CI runs on
 Ubuntu only. Publishing is automatic: release-please owns the draft release
 and tag, the `release.yml` workflow publishes the crate and only then flips
-the draft live, and `release-guard.yml` demotes hand-published drafts to
-pre-release. Never publish the draft by hand.
-Runners: short jobs (tag checks, release-please, draft promotion,
-release guard) use `ubuntu-slim`; toolchain and build jobs stay on
-`ubuntu-latest`.
+the draft live as a full release; if the crate publish fails or is
+cancelled, a `publish-prerelease-on-failure` job flips the draft live as a
+pre-release instead. Never publish the draft by hand.
+Runners: short jobs (tag checks, release-please, draft promotion)
+use `ubuntu-slim`; toolchain and build jobs stay on `ubuntu-latest`.
 
 ## Essential Commands
 
@@ -105,7 +105,7 @@ All source files must include:
 ├── src/
 │   └── lib.rs                      # Crate implementation and tests
 ├── docs/agents/                    # Task-specific agent guides
-├── .github/workflows/              # CI, release (incl. crates.io publish), release guard
+├── .github/workflows/              # CI, release (incl. crates.io publish)
 ├── Cargo.toml                      # Package configuration
 └── CHANGELOG.md                    # Owned by release-please, do not hand-edit
 ```
