@@ -5,6 +5,14 @@ All notable changes to `webkit2gtk-nvidia-quirk` will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This changelog is auto-generated from commits that modify this crate.
 
+## [2.3.1](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/compare/webkit2gtk-nvidia-quirk-v2.3.0...webkit2gtk-nvidia-quirk-v2.3.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* drop sccache custom manager covered by built-in extraction ([#36](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/issues/36)) ([fab5cc3](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/commit/fab5cc38245ea8fb1e272ea0255669df26dc2df4))
+* **release:** don't publish release on failure to allow rebuilds ([#38](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/issues/38)) ([b46177e](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/commit/b46177e3441efccb78d17745e0a98b04576ba1ce))
+
 ## [2.3.0](https://github.com/hrzlgnm/webkit2gtk-nvidia-quirk/compare/webkit2gtk-nvidia-quirk-v2.2.0...webkit2gtk-nvidia-quirk-v2.3.0) (2026-10-19)
 
 
