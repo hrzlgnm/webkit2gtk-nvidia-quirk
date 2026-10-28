@@ -14,8 +14,8 @@ Releases are published to crates.io via trusted publishing (OIDC). CI runs on
 Ubuntu only. Publishing is automatic: release-please owns the draft release
 and tag, the `release.yml` workflow publishes the crate and only then flips
 the draft live as a full release; if the crate publish fails or is
-cancelled, a `publish-prerelease-on-failure` job flips the draft live as a
-pre-release instead. Never publish the draft by hand.
+cancelled, the draft stays unpublished so the release can be rebuilt
+with "Re-run failed jobs". Never publish the draft by hand.
 Runners: short jobs (tag checks, release-please, draft promotion)
 use `ubuntu-slim`; toolchain and build jobs stay on `ubuntu-latest`.
 
