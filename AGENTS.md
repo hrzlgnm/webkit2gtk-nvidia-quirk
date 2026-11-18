@@ -49,6 +49,9 @@ cargo test && \
 actionlint .github/workflows/*.yml
 ```
 
+A commit that changes only Markdown (`*.md`) runs only `typos`, in
+place of the full check.
+
 ### Task-specific guides
 
 - GitHub Actions: before modifying `.github/workflows/*.yml`, read [docs/agents/github-actions.md](docs/agents/github-actions.md) first.
